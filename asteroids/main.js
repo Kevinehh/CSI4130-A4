@@ -1,16 +1,14 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+
 // global configuration
 const beltRadius = 600; // overall radius of the asteroid belt
 const asteroidCount = 500; // total number of asteroids
 const radiusVariation = 50; // variation in radial distance for asteroids
 const beltThickness = 50; // vertical spread of the belt
 
-// fog configuration
-const fogParticleCount = 20000; // number of particles for the fog effct
-const fogColor = new THREE.Color(0xaaaaaa);
-const fogParticleSize = 5;    
-const fogOpacity = 0.05;  
-
-// initialize simplex noise
+// initialize simplex noise 
 const simplex = new SimplexNoise();
 
 // scene, camera & renderer setup
@@ -18,10 +16,10 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
 const camera = new THREE.PerspectiveCamera(
-  60,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  5000
+    60,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    5000
 );
 camera.position.set(0, -beltRadius * 1.2, beltRadius * 0.8);
 camera.lookAt(0, 0, 0);
@@ -31,7 +29,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 // orbitcontrols for mouse interaction
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.minDistance = 50;
@@ -51,220 +49,263 @@ scene.add(shootingStarsGroup);
 const shootingStars = [];
 const shootingStarCount = 5;
 
-// fog/cloud particle system
-const fogGeometry = new THREE.BufferGeometry();
-const fogPositions = new Float32Array(fogParticleCount * 3);
+// load the shaders asynchronously 
+let fogMaterial; // declare here, assign after loading
 
-for (let i = 0; i < fogParticleCount; i++) {
-  const angle = Math.random() * Math.PI * 2;
-  // distribute more evenly across the radius variation
-  const radius = beltRadius - radiusVariation + Math.random() * radiusVariation * 2;
-  const x = radius * Math.cos(angle);
-  const y = radius * Math.sin(angle);
-  const z = (Math.random() - 0.5) * beltThickness * 2; // wider spread for fog
+Promise.all([
+    fetch('./shader/vertexShader.vs').then(response => response.text()),
+    fetch('./shader/fragmentShader.fs').then(response => response.text())
+]).then(([vertexShaderSource, fragmentShaderSource]) => {
+    console.log("shaders loaded successfully.");
 
-  fogPositions[i * 3 + 0] = x;
-  fogPositions[i * 3 + 1] = y;
-  fogPositions[i * 3 + 2] = z;
+    // initialize the scene contents after the dhaders are loaded
+    initializeScene(vertexShaderSource, fragmentShaderSource);
+
+}).catch(error => {
+    console.error("error loading shaders:", error);
+    
+});
+
+
+function initializeScene(vertexShader, fragmentShader) {
+
+    // volumetric fog implementation
+    // step 1 :  define the bounding box geometry
+    const fogBoundsSize = (beltRadius + radiusVariation) * 2.2;
+    const fogBoundingBox = new THREE.BoxGeometry(
+        fogBoundsSize,
+        fogBoundsSize,
+        beltThickness * 3
+    );
+
+    // step 2: define the ShaderMaterial (using loaded shader sources)
+    fogMaterial = new THREE.ShaderMaterial({ 
+        uniforms: {
+            uCameraPos: { value: camera.position },
+            uFogColor: { value: new THREE.Color(0xaaaaaa) },
+            uBeltRadius: { value: beltRadius },
+            uTorusRadius: { value: radiusVariation },
+            uNoiseScale: { value: 0.1 },
+            uNoiseStrength: { value: 0.2 },
+            uDensityScale: { value: 0.005 },
+            uSteps: { value: 64 }, 
+            uMaxDist: { value: fogBoundsSize * 1 },
+        },
+        vertexShader: vertexShader,     // use the loaded vertex shader
+        fragmentShader: fragmentShader, // use the loaded fragment shader
+        transparent: true,
+        depthWrite: false,
+        side: THREE.BackSide
+    });
+
+    // step 3: create the mesh and add to Scene
+    const fogVolume = new THREE.Mesh(fogBoundingBox, fogMaterial);
+    scene.add(fogVolume);
+
+    // load model
+    const objLoader = new OBJLoader();
+    objLoader.load(
+        "./resources/asteroid.obj", 
+        (object) => {
+            console.log("./shader/asteroid OBJ loaded.");
+            setupAsteroidsAndParticles(object);
+            setupShootingStars(); // setup stars after asteroids are conceptually placed
+
+            // start the animation
+            animate();
+            console.log("scene initialized, starting animation.");
+        },
+        (xhr) => {
+            // console.log((xhr.loaded / xhr.total * 100) + '% loaded'); // Progress
+        },
+        (error) => {
+            console.error("error loading OBJ:", error);
+        }
+    );
+} 
+
+
+function setupAsteroidsAndParticles(object) {
+    let baseMesh = null;
+    object.traverse((child) => {
+        if (child.isMesh) {
+            baseMesh = child;
+        }
+    });
+    if (!baseMesh) {
+        console.error("no mesh found in the obj file.");
+        return;
+    }
+
+    // material override
+    baseMesh.material = new THREE.MeshPhongMaterial({ color: 0x888888 });
+
+    // procedural noise displacement
+    baseMesh.geometry.computeBoundingSphere();
+    const positionAttr = baseMesh.geometry.attributes.position;
+    const center = baseMesh.geometry.boundingSphere.center;
+
+    for (let i = 0; i < positionAttr.count; i++) {
+        const x = positionAttr.getX(i);
+        const y = positionAttr.getY(i);
+        const z = positionAttr.getZ(i);
+
+        const relX = x - center.x;
+        const relY = y - center.y;
+        const relZ = z - center.z;
+
+        const noiseFactor = 0.15;
+        const noiseAmplitude = 0.3;
+        const displacement = noiseAmplitude * simplex.noise3D(relX * noiseFactor, relY * noiseFactor, relZ * noiseFactor);
+
+        const vert = new THREE.Vector3(x, y, z);
+        const dir = vert.clone().sub(center).normalize();
+        vert.addScaledVector(dir, displacement);
+
+        positionAttr.setXYZ(i, vert.x, vert.y, vert.z);
+    }
+    positionAttr.needsUpdate = true;
+    baseMesh.geometry.computeVertexNormals();
+
+    // instanced Mesh
+    const instancedMesh = new THREE.InstancedMesh(
+        baseMesh.geometry,
+        baseMesh.material,
+        asteroidCount
+    );
+    instancedMesh.frustumCulled = true;
+    const dummy = new THREE.Object3D();
+
+    for (let i = 0; i < asteroidCount; i++) {
+        const R = beltRadius;
+        const r = radiusVariation * Math.sqrt(Math.random());
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 2; 
+
+        const x = (R + r * Math.cos(theta)) * Math.cos(phi);
+        const y = (R + r * Math.cos(theta)) * Math.sin(phi);
+        const z = r * Math.sin(theta) * (beltThickness / radiusVariation);
+
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        const scale = 0.5 + Math.random() * 1.5;
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        instancedMesh.setMatrixAt(i, dummy.matrix);
+    }
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    scene.add(instancedMesh);
+
+    // particles 
+    const particleCount = 500;
+    const particleGeometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(particleCount * 3);
+    const colors = new Float32Array(particleCount * 3);
+
+    for (let i = 0; i < particleCount; i++) {
+        const R = beltRadius;
+        const r = radiusVariation * Math.sqrt(Math.random());
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 2;
+
+        const x = (R + r * Math.cos(theta)) * Math.cos(phi);
+        const y = (R + r * Math.cos(theta)) * Math.sin(phi);
+        const z = r * Math.sin(theta) * (beltThickness / radiusVariation);
+
+        positions[i * 3 + 0] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+
+        if (Math.random() < 0.5) {
+            colors.set([1.0, 1.0, 1.0], i * 3); // white
+        } else {
+            colors.set([0.0, 0.0, 1.0], i * 3); // blue
+        }
+    }
+    particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const particleMaterial = new THREE.PointsMaterial({ size: 2, vertexColors: true });
+    const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+    scene.add(particleSystem);
 }
 
-fogGeometry.setAttribute('position', new THREE.BufferAttribute(fogPositions, 3));
+function setupShootingStars() {
+    for (let i = 0; i < shootingStarCount; i++) {
+        const R = beltRadius;
+        const r = radiusVariation * Math.sqrt(Math.random());
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 2;
 
-// soft texture for smoother particles
-const textureLoader = new THREE.TextureLoader();
-const fogTexture = textureLoader.load('https://threejs.org/examples/textures/sprites/disc.png'); 
+        const x = (R + r * Math.cos(theta)) * Math.cos(phi);
+        const y = (R + r * Math.cos(theta)) * Math.sin(phi);
+        const z = r * Math.sin(theta) * (beltThickness / radiusVariation);
+        const startPos = new THREE.Vector3(x, y, z);
 
-const fogMaterial = new THREE.PointsMaterial({
-  color: fogColor,
-  size: fogParticleSize,
-  map: fogTexture, // use the loaded texture
-  transparent: true,
-  opacity: fogOpacity,
-  blending: THREE.NormalBlending, 
-  depthWrite: false, 
-  sizeAttenuation: true 
-});
+        const velocity = startPos.clone().normalize().multiplyScalar(5 + Math.random() * 5);
 
-const fogCloud = new THREE.Points(fogGeometry, fogMaterial);
-scene.add(fogCloud);
-
-
-// load the asteroid model
-const objLoader = new THREE.OBJLoader();
-objLoader.load("uploads_files_4462300_Astreoid-1.obj", (object) => {
-  let baseMesh = null;
-  object.traverse((child) => {
-    if (child.isMesh) {
-      baseMesh = child;
+        const coneGeometry = new THREE.ConeGeometry(0.5, 20, 8);
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xffffaa,
+            transparent: true,
+            opacity: 0.7
+        });
+        const shootingStar = new THREE.Mesh(coneGeometry, material);
+        shootingStar.position.copy(startPos);
+        shootingStar.quaternion.setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            velocity.clone().normalize()
+        );
+        shootingStarsGroup.add(shootingStar);
+        shootingStars.push({ mesh: shootingStar, velocity: velocity });
     }
-  });
-  if (!baseMesh) {
-    console.error("no mesh found in the obj file.");
-    return;
-  }
+}
 
-  // override any existing material with a grey meshphongmaterial.
-  baseMesh.material = new THREE.MeshPhongMaterial({ color: 0x888888 });
-
-  // procedural noise displacement
-  baseMesh.geometry.computeBoundingSphere();
-  const positionAttr = baseMesh.geometry.attributes.position;
-  for (let i = 0; i < positionAttr.count; i++) {
-    const x = positionAttr.getX(i);
-    const y = positionAttr.getY(i);
-    const z = positionAttr.getZ(i);
-    // generate a small displacement using simplex noise.
-    const displacement = 0.2 * simplex.noise3D(x * 0.1, y * 0.1, z * 0.1);
-    positionAttr.setXYZ(i, x + displacement, y + displacement, z + displacement);
-  }
-  positionAttr.needsUpdate = true;
-  baseMesh.geometry.computeVertexNormals();
-
-  // create an instancedmesh for the asteroids
-  const instancedMesh = new THREE.InstancedMesh(
-    baseMesh.geometry,
-    baseMesh.material,
-    asteroidCount
-  );
-  instancedMesh.frustumCulled = true; // Ensure this is true for performance
-  const dummy = new THREE.Object3D();
-
-  // arrange asteroids in a torus-like belt.
-  for (let i = 0; i < asteroidCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    // use the same radius distribution logic as the fog for consisten
-    // const radius = beltRadius + (Math.random() - 0.5) * radiusVariation;
-    const radius = beltRadius - radiusVariation + Math.random() * radiusVariation * 2;
-
-    const x = radius * Math.cos(angle);
-    const y = radius * Math.sin(angle);
-    const z = (Math.random() - 0.5) * beltThickness; // keep asteroid thickness perhaps tighter than fog
-    dummy.position.set(x, y, z);
-
-    // random rotation for a natural look.
-    dummy.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI,
-      Math.random() * Math.PI
-    );
-    // random scale for variety.
-    const scale = 0.5 + Math.random() * 1.5;
-    dummy.scale.set(scale, scale, scale);
-    dummy.updateMatrix();
-    instancedMesh.setMatrixAt(i, dummy.matrix);
-  }
-  instancedMesh.instanceMatrix.needsUpdate = true;
-  scene.add(instancedMesh);
-
-  // add specks of white and blue to enhance the belt
-  const particleCount = 500;
-  const particleGeometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(particleCount * 3);
-  const colors = new Float32Array(particleCount * 3);
-
-  for (let i = 0; i < particleCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    // const radius = beltRadius + (Math.random() - 0.5) * radiusVariation;
-    const radius = beltRadius - radiusVariation + Math.random() * radiusVariation * 2;
-    const x = radius * Math.cos(angle);
-    const y = radius * Math.sin(angle);
-    const z = (Math.random() - 0.5) * beltThickness;
-
-    positions[i * 3 + 0] = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-
-    // randomly assign white or blue.
-    if (Math.random() < 0.5) {
-      colors[i * 3 + 0] = 1.0;
-      colors[i * 3 + 1] = 1.0;
-      colors[i * 3 + 2] = 1.0;
-    } else {
-      colors[i * 3 + 0] = 0.0;
-      colors[i * 3 + 1] = 0.0;
-      colors[i * 3 + 2] = 1.0;
-    }
-  }
-
-  particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const particleMaterial = new THREE.PointsMaterial({
-    size: 2,
-    vertexColors: true
-  });
-  const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
-  scene.add(particleSystem);
-
-  // create shooting stars (simulated as shooting rocks)
-  // for a few shooting stars, choose random starting positions on the belt
-  for (let i = 0; i < shootingStarCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    // const radius = beltRadius + (Math.random() - 0.5) * radiusVariation;
-    const radius = beltRadius - radiusVariation + Math.random() * radiusVariation * 2;
-    const x = radius * Math.cos(angle);
-    const y = radius * Math.sin(angle);
-    const z = (Math.random() - 0.5) * beltThickness;
-    const startPos = new THREE.Vector3(x, y, z);
-
-    // determine a velocity vector that points roughly outward from the belt center.
-    const velocity = startPos.clone().normalize().multiplyScalar(2 + Math.random());
-
-    // cone is created along +y; we will rotate it to align with its velocity.
-    const coneGeometry = new THREE.ConeGeometry(0.5, 10, 8);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xffffaa,
-      transparent: true,
-      opacity: 0.9
-    });
-    const shootingStar = new THREE.Mesh(coneGeometry, material);
-    shootingStar.position.copy(startPos);
-    // rotate the cone so its tip (default +y) aligns with the velocity direction.
-    shootingStar.quaternion.setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      velocity.clone().normalize()
-    );
-    shootingStarsGroup.add(shootingStar);
-    shootingStars.push({ mesh: shootingStar, velocity: velocity });
-  }
-});
 
 // animation loop
 function animate() {
-  requestAnimationFrame(animate);
-  controls.update();
+    requestAnimationFrame(animate);
+    controls.update();
 
-  // update shooting stars
-  shootingStars.forEach((star) => {
-    star.mesh.position.add(star.velocity);
-    // if the shooting star moves too far from the center, reset it to a new position on the belt.
-    if (star.mesh.position.length() > beltRadius * 2) {
-      const angle = Math.random() * Math.PI * 2;
-      // const radius = beltRadius + (Math.random() - 0.5) * radiusVariation;
-      const radius = beltRadius - radiusVariation + Math.random() * radiusVariation * 2;
-      const x = radius * Math.cos(angle);
-      const y = radius * Math.sin(angle);
-      const z = (Math.random() - 0.5) * beltThickness;
-      const newPos = new THREE.Vector3(x, y, z);
-      star.mesh.position.copy(newPos);
-      // new velocity pointing outward from the center.
-      star.velocity = newPos.clone().normalize().multiplyScalar(2 + Math.random());
-      star.mesh.quaternion.setFromUnitVectors(
-        new THREE.Vector3(0, 1, 0),
-        star.velocity.clone().normalize()
-      );
+    // the update volumetric fog uniforms (check if material exists yet)
+    if (fogMaterial) {
+        fogMaterial.uniforms.uCameraPos.value.copy(camera.position);
     }
-  });
 
+    // update shooting stars
+    shootingStars.forEach((star) => {
+        star.mesh.position.add(star.velocity);
+        if (star.mesh.position.length() > beltRadius * 2.5) {
+           
+            const R = beltRadius;
+            const r = radiusVariation * Math.sqrt(Math.random());
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI * 2;
+            const x = (R + r * Math.cos(theta)) * Math.cos(phi);
+            const y = (R + r * Math.cos(theta)) * Math.sin(phi);
+            const z = r * Math.sin(theta) * (beltThickness / radiusVariation);
+            const newPos = new THREE.Vector3(x, y, z);
+            star.mesh.position.copy(newPos);
 
+            
+            star.velocity = newPos.clone().normalize().multiplyScalar(5 + Math.random() * 5);
+            star.mesh.quaternion.setFromUnitVectors(
+                new THREE.Vector3(0, 1, 0),
+                star.velocity.clone().normalize()
+            );
+        }
+    });
 
-  renderer.render(scene, camera);
+    renderer.render(scene, camera);
 }
-animate();
 
 // handle window resize
 window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
 });
