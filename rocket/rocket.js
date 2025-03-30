@@ -281,6 +281,7 @@ scene.add(light);
 
 const loader = new GLTFLoader();
 let rocket; // Store rocket reference
+let floating = false; // Track when the rocket is in space
 let isTakingOff = false; // Track when takeoff starts
 
 loader.load(
@@ -322,7 +323,7 @@ function startTakeoff() {
     isTakingOff = true;
     particles._points.visible = true; // Show particles when takeoff starts
 
-    let takeoffSpeed = 0.2; // Speed of ascent
+    let takeoffSpeed = 2; // Speed of ascent
     function animateTakeoff() {
         if (rocket.position.y < 10) { // Move until Y=10
             rocket.position.y += takeoffSpeed;
@@ -375,13 +376,47 @@ function updateBackground(height) {
   let transitionHeight = 7; // Start transition at Y=7
   let maxHeight = 10; // Fully space by Y=10
 
+  //t value slowly converges to 1 to simulate a fade to space
   let t = Math.min(Math.max((height - transitionHeight) / (maxHeight - transitionHeight), 0), 1);
   scene.background = skyColor.lerp(spaceColor, t);
 
     // Show stars when in space
     if (height >= maxHeight) {
       stars.visible = true;
+
+
+      // Stop exhaust particles when reaching space
+      particles._points.visible = false;
+
+      // Start zero-gravity floating effect
+      if (!floating) {
+          floating = true;
+          startFloating();
+      }
   }
+}
+
+// Zero Gravity Floating Effect
+function startFloating() {
+  let direction = 1;
+  function float() {
+      if (!floating) return;
+
+      // rocket.position.y += direction * 0.01; // Move up/down
+      // if (rocket.position.y > 10.5 || rocket.position.y < 9.5) {
+      //     direction *= -1; // Reverse direction
+      // }
+      //
+      //x makes it spin like a wheel from viewing front
+      // rocket.rotation.x += 0.05;
+      //y makes it turn like in a microwave
+      rocket.rotation.y += 0.04;
+      //z makes it spin like a clock
+      rocket.rotation.z += 0.01;
+
+      requestAnimationFrame(float);
+  }
+  float();
 }
 
 camera.position.z = 15;
