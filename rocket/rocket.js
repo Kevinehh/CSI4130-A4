@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import WebGL from "three/addons/capabilities/WebGL.js";
 import { GUI } from "dat.gui";
-import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.118/examples/jsm/controls/OrbitControls.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 
 const _VS = `
@@ -252,10 +252,20 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 0.1, 1000 );
 scene.background = new THREE.Color(0x87CEEB); // Light blue
 
+
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize( window.innerWidth, window.innerHeight );
 renderer.setAnimationLoop( raf );
 document.body.appendChild( renderer.domElement );
+
+// CONTROLS
+// const orbitControls = new OrbitControls(camera, renderer.domElement);
+// orbitControls.enableDamping = true;
+// orbitControls.minDistance = 5;
+// orbitControls.maxDistance = 15;
+// orbitControls.enablePan = false;
+// orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
+// orbitControls.update();
 
 // const geometry = new THREE.BoxGeometry( 1, 1, 1 );
 // const material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
@@ -269,9 +279,9 @@ document.body.appendChild( renderer.domElement );
 const light = new THREE.AmbientLight(0xffffff, 1); // Soft white light
 scene.add(light);
 
-// Instantiate a loader
 const loader = new GLTFLoader();
 let rocket; // Store rocket reference
+let isTakingOff = false; // Track when takeoff starts
 
 loader.load(
     'rocket_ship/scene.gltf',
@@ -279,9 +289,16 @@ loader.load(
         rocket = gltf.scene;
         scene.add(rocket);
 
-        // Attach particles to the rocket by making it a child
+        // Set rocket on the platform initially
+        rocket.position.set(0, 0, 0);
+
+        // Attach particles but keep them hidden initially
         rocket.add(particles._points);
-        particles._points.position.set(0, -1, 0); // Adjust if needed
+        //particles._points.position.set(0, -1, 0); // Adjust for proper exhaust position
+        particles._points.visible = false; // Hide particles until takeoff
+
+        // Start rocket takeoff after 5 seconds
+        setTimeout(startTakeoff, 5000);
     },
     function (xhr) {
         console.log((xhr.loaded / xhr.total * 100) + '% loaded');
@@ -291,7 +308,83 @@ loader.load(
     }
 );
 
-camera.position.z = 5;
+// Add a platform under the rocket
+const platformGeometry = new THREE.CylinderGeometry(3, 3, 0.5, 32);
+const platformMaterial = new THREE.MeshStandardMaterial({ color: 0x808080 });
+const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+platform.position.set(0, -0.25, 0); // Slightly raised to ensure contact with rocket
+scene.add(platform);
+
+// Animate the rocket taking off
+function startTakeoff() {
+    if (!rocket) return;
+
+    isTakingOff = true;
+    particles._points.visible = true; // Show particles when takeoff starts
+
+    let takeoffSpeed = 0.2; // Speed of ascent
+    function animateTakeoff() {
+        if (rocket.position.y < 10) { // Move until Y=10
+            rocket.position.y += takeoffSpeed;
+
+            // Transition background as the rocket ascends
+            updateBackground(rocket.position.y);
+
+            requestAnimationFrame(animateTakeoff);
+        }
+    }
+    animateTakeoff();
+}
+
+// Smoothly move the camera to follow the rocket
+function followRocket() {
+  if (!rocket) return;
+
+  let targetPosition = new THREE.Vector3(
+      rocket.position.x,
+      rocket.position.y + 2,  // Keep camera slightly above
+      rocket.position.z + 15   // Maintain some distance
+  );
+
+  camera.position.lerp(targetPosition, 0.05); // Smoothly move camera
+  camera.lookAt(rocket.position); // Always look at the rocket
+}
+
+
+// Create Stars but Keep Hidden Initially
+const starVertices = [];
+for (let i = 0; i < 20000; i++) {
+    const x = THREE.MathUtils.randFloatSpread(2000);
+    const y = THREE.MathUtils.randFloatSpread(2000);
+    const z = THREE.MathUtils.randFloatSpread(2000);
+    starVertices.push(x, y, z);
+}
+
+const starGeometry = new THREE.BufferGeometry();
+starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+const starMaterial = new THREE.PointsMaterial({ color: 0x888888, size: 0.5 });
+const stars = new THREE.Points(starGeometry, starMaterial);
+stars.visible = false; // Hide stars at the beginning
+scene.add(stars);
+
+// Smooth background transition
+function updateBackground(height) {
+  let skyColor = new THREE.Color(0x87CEEB); // Sky blue
+  let spaceColor = new THREE.Color(0x000000); // Black (space)
+
+  let transitionHeight = 7; // Start transition at Y=7
+  let maxHeight = 10; // Fully space by Y=10
+
+  let t = Math.min(Math.max((height - transitionHeight) / (maxHeight - transitionHeight), 0), 1);
+  scene.background = skyColor.lerp(spaceColor, t);
+
+    // Show stars when in space
+    if (height >= maxHeight) {
+      stars.visible = true;
+  }
+}
+
+camera.position.z = 15;
 
 const particles = new ParticleSystem({
     parent: scene,
@@ -307,17 +400,23 @@ function raf() {
         }
   
         raf();
+
+        if (isTakingOff) {
+          followRocket();
+      }
   
         renderer.render( scene, camera );
+        //orbitControls.update();
         _Step(t - _previousRAF);
         _previousRAF = t;
       });
 }
 
 function _Step(timeElapsed) {
-    const timeElapsedS = timeElapsed * 0.001;
-
-    particles.Step(timeElapsedS);
+  if (isTakingOff) {
+      const timeElapsedS = timeElapsed * 0.001;
+      particles.Step(timeElapsedS);
+  }
 }
 
 // function animate() {
