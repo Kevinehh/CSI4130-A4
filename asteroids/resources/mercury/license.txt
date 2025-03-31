@@ -1,0 +1,11 @@
+Model Information:
+* title:	Mercury natural color
+* source:	https://sketchfab.com/3d-models/mercury-natural-color-bc882b60ec1f4050a1771a54bdb066b1
+* author:	kongle (https://sketchfab.com/minecraftnorge)
+
+Model License:
+* license type:	CC-BY-SA-4.0 (http://creativecommons.org/licenses/by-sa/4.0/)
+* requirements:	Author must be credited. Modified versions must have the same license. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Mercury natural color" (https://sketchfab.com/3d-models/mercury-natural-color-bc882b60ec1f4050a1771a54bdb066b1) by kongle (https://sketchfab.com/minecraftnorge) licensed under CC-BY-SA-4.0 (http://creativecommons.org/licenses/by-sa/4.0/)
