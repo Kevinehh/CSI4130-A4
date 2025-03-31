@@ -493,12 +493,12 @@ function startTakeoff() {
     animateTakeoff();
 }
 
-// Add this new function to handle camera zooming
-function zoomOutCamera() {
-    console.log("Zooming camera out for space view");
+// Add this new function to handle camera zooming with callback
+function zoomOutCamera(callback) {
+    console.log("Zooming camera out before takeoff");
     
     // Increase the camera offset for a more distant view
-    const spaceViewOffset = new THREE.Vector3(-20, 5, 30); // Larger offset for wider view
+    const wideViewOffset = new THREE.Vector3(-15, 5, 25); // Wider view to see the takeoff
     
     // Animate the camera transition
     let zoomProgress = 0;
@@ -506,10 +506,10 @@ function zoomOutCamera() {
     
     function animateZoom() {
         if (zoomProgress < 1) {
-            zoomProgress += 0.01; // Control zoom speed (lower = slower)
+            zoomProgress += 0.02; // Control zoom speed (higher = faster)
             
-            // Lerp between current offset and space view offset
-            rocketOffset.lerpVectors(originalOffset, spaceViewOffset, zoomProgress);
+            // Lerp between current offset and wide view offset
+            rocketOffset.lerpVectors(originalOffset, wideViewOffset, zoomProgress);
             
             // Force camera update with new offset
             if (currentTarget === rocket && cameraFollowEnabled) {
@@ -517,13 +517,18 @@ function zoomOutCamera() {
             }
             
             requestAnimationFrame(animateZoom);
+        } else {
+            // When zoom is complete, execute callback if provided
+            if (callback && typeof callback === 'function') {
+                callback();
+            }
         }
     }
     
     animateZoom();
     
     // Also increase the orbit controls max distance to allow manual zooming out further
-    orbitControls.maxDistance = 50;
+    orbitControls.maxDistance = 40;
 }
 
 // Function to update background based on rocket altitude
@@ -553,7 +558,7 @@ function startFloating() {
     float();
 }
 
-// Also modify the checkModelVisibility function to improve the transition:
+// Modify the checkModelVisibility function to zoom out after model removal and before takeoff
 function checkModelVisibility(currentTime, model) {
     if (!model || !modelVisible) return;
     
@@ -595,9 +600,11 @@ function checkModelVisibility(currentTime, model) {
             // Force immediate camera update to prevent jarring transition
             followTarget(rocket);
             
-            // Now that the model is removed, start the rocket takeoff with a slight delay
-            // This ensures the camera has time to transition
-            setTimeout(startTakeoff, 2000);
+            // First zoom out the camera BEFORE starting takeoff
+            zoomOutCamera(function() {
+                // Start rocket takeoff after camera zoom completes
+                setTimeout(startTakeoff, 1000);
+            });
         }
     }
 }
