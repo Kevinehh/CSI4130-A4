@@ -80,6 +80,11 @@ let bones = {};
 let clock = new THREE.Clock();
 let walkSpeed = 2; // Steps per second
 
+// Model visibility variables
+let startTime = 0;
+const disappearAfter = 7; // Time in seconds after which the model disappears
+let modelVisible = true;
+
 // GLTF LOADER
 const loader = new GLTFLoader();
 
@@ -91,6 +96,9 @@ loader.load(
         model.position.set(0, 0, 0);
         model.castShadow = true;
         scene.add(model);
+        
+        // Start the timer when model is loaded
+        startTime = clock.getElapsedTime();
         
         // Map important bones by name
         const boneMapping = {
@@ -144,7 +152,7 @@ loader.load(
 
 // Custom walk animation function specifically for this model
 function animateWalk(time) {
-    if (!model || Object.keys(bones).length === 0) return;
+    if (!model || Object.keys(bones).length === 0 || !modelVisible) return;
     
     const cycle = (time * walkSpeed) % (Math.PI * 2);
     
@@ -198,9 +206,22 @@ function animateWalk(time) {
     }
 }
 
+// Check if model should disappear
+function checkModelVisibility(currentTime, model) {
+    if (!model || !modelVisible) return;
+    
+    // Check if enough time has passed
+    if ((currentTime - startTime) > disappearAfter) {
+        // Make model disappear
+        modelVisible = false;
+        scene.remove(model);
+        console.log(`Model disappeared after ${disappearAfter} seconds`);
+    }
+}
+
 // Improved camera follow function that maintains consistent distance and angle
-function followModel() {
-    if (!model || !cameraFollowEnabled) return;
+function followModel(model) {
+    if (!model || !cameraFollowEnabled || !modelVisible) return;
     
     // Calculate ideal camera position based on fixed offset from model
     const idealPosition = new THREE.Vector3(
@@ -224,12 +245,15 @@ function followModel() {
 function animate() {
     const elapsedTime = clock.getElapsedTime();
     
+    // Check if model should disappear
+    checkModelVisibility(elapsedTime, model);
+    
     // Apply custom walk animation
     animateWalk(elapsedTime);
     
     // Follow model with camera if enabled
-    if (model && cameraFollowEnabled) {
-        followModel();
+    if (model && cameraFollowEnabled && modelVisible) {
+        followModel(model);
     }
     
     // Always update orbit controls
