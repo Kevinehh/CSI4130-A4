@@ -15,10 +15,6 @@ const beltThickness = 50; // vertical spread of the belt
 
 // CAMERA
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
-// camera.position.set(1500, 1000, 1500); // Position camera outside the system for a good overview
-// camera.lookAt(0, 0, 0); // Look at the center where the sun is
-camera.position.set(0, -beltRadius * 1.2, beltRadius * 0.8);
-camera.lookAt(0, 0, 0);
 
 // RENDERER
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('canvas.webgl') });
@@ -44,7 +40,7 @@ let currentTarget = null; // Variable to track which object is currently being f
 let initialRocketPosition = null; // Store initial rocket position to calculate proper offsets
 
 // initialize simplex noise 
-// const simplex = new SimplexNoise();
+const simplex = new SimplexNoise();
 
 // global variable for solar system group 
 let solarSystemGroup;
@@ -327,52 +323,6 @@ window.addEventListener('keydown', (event) => {
       }
     }
   }
-});
-
-// Add a key handler to give users a shortcut to view the solar system
-window.addEventListener('keydown', (event) => {
-    if (event.key === 'v' || event.key === 'V') {
-        // Immediately transition to solar system view
-        cameraFollowEnabled = false;
-        
-        // Smooth transition to solar system view
-        let progress = 0;
-        const startPosition = camera.position.clone();
-        const startTarget = orbitControls.target.clone();
-        
-        function quickTransitionToSolarSystem() {
-            if (progress < 1) {
-                progress += 0.02; // Faster transition
-                
-                // Calculate new camera position for solar system overview
-                const newPosition = new THREE.Vector3().lerpVectors(
-                    startPosition,
-                    new THREE.Vector3(2000, 1500, 2000),
-                    progress
-                );
-                
-                // Keep focus on the center/sun
-                const newTarget = new THREE.Vector3().lerpVectors(
-                    startTarget,
-                    new THREE.Vector3(0, 0, 0),
-                    progress
-                );
-                
-                camera.position.copy(newPosition);
-                orbitControls.target.copy(newTarget);
-                
-                requestAnimationFrame(quickTransitionToSolarSystem);
-            } else {
-                // Set final position and orientation
-                camera.position.set(0, -beltRadius * 1.2, beltRadius * 0.8);
-                camera.lookAt(0, 0, 0);
-                orbitControls.update();
-                console.log("Switched to solar system view");
-            }
-        }
-        
-        quickTransitionToSolarSystem();
-    }
 });
 
 // LIGHTS
@@ -664,7 +614,7 @@ function setupShootingStars() {
 const floorGeometry = new THREE.PlaneGeometry(100, 100); // Expanded floor size
 const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, side: THREE.DoubleSide });
 const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-floor.position.set(1000,0,0)
+floor.position.set(0,0,1000)
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
@@ -691,9 +641,9 @@ const particles = new ParticleSystem({
 // Initialize stars for space background
 const starVertices = [];
 for (let i = 0; i < 20000; i++) {
-  const x = THREE.MathUtils.randFloatSpread(2000);
-  const y = THREE.MathUtils.randFloatSpread(2000);
-  const z = THREE.MathUtils.randFloatSpread(2000);
+  const x = THREE.MathUtils.randFloatSpread(3000);
+  const y = THREE.MathUtils.randFloatSpread(3000);
+  const z = THREE.MathUtils.randFloatSpread(3000);
   starVertices.push(x, y, z);
 }
 
@@ -729,7 +679,7 @@ loader.load(
     'connor/scene.gltf',
     function (gltf) {
         model = gltf.scene;
-        model.position.set(1000, 0, 0);
+        model.position.set(0, 0, 950);
         model.castShadow = true;
         scene.add(model);
         
@@ -796,7 +746,7 @@ loader.load(
         scene.add(rocket);
 
         // Set rocket on the platform initially
-        rocket.position.set(1000, -1, 30);
+        rocket.position.set(0, -1, 1000);
         
         // Store initial position for reference
         initialRocketPosition = rocket.position.clone();
@@ -897,59 +847,10 @@ function updateBackground(altitude) {
     }
 }
 
-// Modify the startFloating function to keep view on solar system
+// Modify the startFloating function to keep focus on rocket instead of switching to solar system
 function startFloating() {
-    // Instead of transitioning to the sun view, transition to solar system overview
-    setTimeout(() => {
-        // Disable camera following when transitioning to solar system view
-        cameraFollowEnabled = false;
-        
-        // Store original camera position and target for animation
-        const originalCameraPosition = camera.position.clone();
-        const originalTarget = orbitControls.target.clone();
-        
-        // Animate camera transition to solar system view
-        let progress = 0;
-        
-        function animateCameraToSolarSystem() {
-            if (progress < 1) {
-                progress += 0.01; // Control transition speed
-                
-                // Calculate interpolated position for a wide view
-                const newPosition = new THREE.Vector3().lerpVectors(
-                    originalCameraPosition,
-                    new THREE.Vector3(2000, 1500, 2000), // Position for seeing the whole system
-                    progress
-                );
-                
-                // Keep target on sun/center of solar system
-                const newTarget = new THREE.Vector3().lerpVectors(
-                    originalTarget,
-                    new THREE.Vector3(0, 0, 0), // Sun position
-                    progress
-                );
-                
-                // Update camera position and orientation
-                camera.position.copy(newPosition);
-                orbitControls.target.copy(newTarget);
-                camera.lookAt(newTarget);
-                
-                requestAnimationFrame(animateCameraToSolarSystem);
-            } else {
-                // Final position adjustment
-                camera.position.set(2000, 1500, 2000);
-                orbitControls.target.set(0, 0, 0);
-                camera.lookAt(0, 0, 0);
-                
-                // Enable controls for user to navigate
-                orbitControls.enabled = true;
-                
-                console.log("Camera transitioned to solar system overview");
-            }
-        }
-        
-        animateCameraToSolarSystem();
-    }, 3000); // 3 second delay before transitioning camera
+    // Remove the setTimeout block that transitions to solar system view
+    // Instead, just continue following the rocket
     
     function float() {
         if (!floating || !rocket) return;
@@ -962,6 +863,11 @@ function startFloating() {
     }
     scene.remove(floor);
     float();
+    
+    // Keep camera following the rocket
+    cameraFollowEnabled = true;
+    currentTarget = rocket;
+    console.log("Camera continuing to follow rocket during floating");
 }
 
 // Modify the checkModelVisibility function to zoom out after model removal and before takeoff
