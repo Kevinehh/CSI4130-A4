@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // global configuration
 const beltRadius = 600; // overall radius of the asteroid belt
@@ -10,6 +11,9 @@ const beltThickness = 50; // vertical spread of the belt
 
 // initialize simplex noise 
 const simplex = new SimplexNoise();
+
+// global variable for solar system group 
+let solarSystemGroup;
 
 // scene, camera & renderer setup
 const scene = new THREE.Scene();
@@ -45,7 +49,6 @@ scene.add(directionalLight);
 // global group for shooting stars
 const shootingStarsGroup = new THREE.Group();
 scene.add(shootingStarsGroup);
-// array to hold shooting star data (mesh and velocity)
 const shootingStars = [];
 const shootingStarCount = 5;
 
@@ -66,11 +69,8 @@ Promise.all([
     
 });
 
-
 function initializeScene(vertexShader, fragmentShader) {
-
     // volumetric fog implementation
-    // step 1 :  define the bounding box geometry
     const fogBoundsSize = (beltRadius + radiusVariation) * 2.2;
     const fogBoundingBox = new THREE.BoxGeometry(
         fogBoundsSize,
@@ -78,7 +78,6 @@ function initializeScene(vertexShader, fragmentShader) {
         beltThickness * 3
     );
 
-    // step 2: define the ShaderMaterial (using loaded shader sources)
     fogMaterial = new THREE.ShaderMaterial({ 
         uniforms: {
             uCameraPos: { value: camera.position },
@@ -91,18 +90,19 @@ function initializeScene(vertexShader, fragmentShader) {
             uSteps: { value: 64 }, 
             uMaxDist: { value: fogBoundsSize * 1 },
         },
-        vertexShader: vertexShader,     // use the loaded vertex shader
-        fragmentShader: fragmentShader, // use the loaded fragment shader
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
         transparent: true,
         depthWrite: false,
         side: THREE.BackSide
     });
 
-    // step 3: create the mesh and add to Scene
     const fogVolume = new THREE.Mesh(fogBoundingBox, fogMaterial);
     scene.add(fogVolume);
 
-    // load model
+    // load the solar system
+    loadSolarSystem();
+
     const objLoader = new OBJLoader();
     objLoader.load(
         "./resources/asteroid.obj", 
@@ -122,8 +122,67 @@ function initializeScene(vertexShader, fragmentShader) {
             console.error("error loading OBJ:", error);
         }
     );
-} 
+}
 
+// Load the Sun and each planet from separate glTF files,
+// applying a scale factor for each model.
+function loadSolarSystem() {
+    const gltfLoader = new GLTFLoader();
+
+    const solarBodies = [
+        { name: "Sun", path: "./resources/sun/scene.gltf", orbitRadius: 0, scale: 8.0 },
+        { name: "Mercury", path: "./resources/mercury/scene.gltf", orbitRadius: 150, scale: 10 },
+        { name: "Venus", path: "./resources/venus/scene.gltf", orbitRadius: 300, scale: 10 },
+        { name: "Earth", path: "./resources/earth/scene.gltf", orbitRadius: 400, scale: 10 },
+        { name: "Mars", path: "./resources/mars/scene.gltf", orbitRadius: 500, scale: 10 },
+        { name: "Jupiter", path: "./resources/jupiter/scene.gltf", orbitRadius: 850, scale: 20 },
+        { name: "Saturn", path: "./resources/saturn/scene.gltf", orbitRadius: 1000, scale: 0.1 },
+        { name: "Uranus", path: "./resources/uranus/scene.gltf", orbitRadius: 1200, scale: 10 },
+        { name: "Neptune", path: "./resources/neptune/scene.gltf", orbitRadius: 1400, scale: 10 }
+    ];
+
+    solarSystemGroup = new THREE.Group();
+
+    // Load each body and set its position and scale. The Sun stays at the center.
+    const promises = solarBodies.map(body => {
+        return new Promise((resolve, reject) => {
+            gltfLoader.load(
+                body.path,
+                (gltf) => {
+                    const model = gltf.scene;
+                    model.name = body.name;
+                    // Apply scaling for this model
+                    model.scale.set(body.scale, body.scale, body.scale);
+                    
+                    // Position planets along the positive X axis if they're not the Sun.
+                    if (body.orbitRadius !== 0) {
+                        // Create a pivot group so the planet can orbit the Sun
+                        const pivot = new THREE.Object3D();
+                        pivot.add(model);
+                        model.position.set(body.orbitRadius, 0, 0);
+                        // Set an orbit speed (adjust the factor as desired)
+                        pivot.userData.orbitSpeed = 0.005 * (300 / body.orbitRadius);
+                        resolve(pivot);
+                    } else {
+                        resolve(model);
+                    }
+                },
+                undefined,
+                (error) => reject(error)
+            );
+        });
+    });
+
+    Promise.all(promises)
+        .then(models => {
+            models.forEach(model => solarSystemGroup.add(model));
+            scene.add(solarSystemGroup);
+            console.log("Solar system models loaded successfully.");
+        })
+        .catch(error => {
+            console.error("Error loading solar system models:", error);
+        });
+}
 
 function setupAsteroidsAndParticles(object) {
     let baseMesh = null;
@@ -276,11 +335,18 @@ function animate() {
         fogMaterial.uniforms.uCameraPos.value.copy(camera.position);
     }
 
+    if (solarSystemGroup) {
+        solarSystemGroup.children.forEach(child => {
+            if (child.userData.orbitSpeed !== undefined) {
+                child.rotation.z += child.userData.orbitSpeed;
+            }
+        });
+    }
+
     // update shooting stars
     shootingStars.forEach((star) => {
         star.mesh.position.add(star.velocity);
         if (star.mesh.position.length() > beltRadius * 2.5) {
-           
             const R = beltRadius;
             const r = radiusVariation * Math.sqrt(Math.random());
             const theta = Math.random() * Math.PI * 2;
@@ -291,7 +357,6 @@ function animate() {
             const newPos = new THREE.Vector3(x, y, z);
             star.mesh.position.copy(newPos);
 
-            
             star.velocity = newPos.clone().normalize().multiplyScalar(5 + Math.random() * 5);
             star.mesh.quaternion.setFromUnitVectors(
                 new THREE.Vector3(0, 1, 0),
