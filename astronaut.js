@@ -5,7 +5,11 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 
 // SCENE
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xa8def0);
+const backgroundTextureLoader = new THREE.TextureLoader();
+const backgroundTexture = backgroundTextureLoader.load('resources/sky.jpg', function(texture) {
+    // When texture loads, set it as the scene background
+    scene.background = texture;
+});
 
 let solarSystemVisible = false; // Track if solar system is visible
 let asteroidBeltVisible = false; // Track if asteroid belt is visible
@@ -661,13 +665,28 @@ function setupShootingStars() {
 }
 
 // FLOOR
-const floorGeometry = new THREE.PlaneGeometry(100, 100); // Expanded floor size
-const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, side: THREE.DoubleSide });
+// Create textures for grass
+const textureLoader = new THREE.TextureLoader();
+const grassTexture = textureLoader.load('resources/grass.jpg', function(texture) {
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(20, 20); // Repeat the texture 20 times
+});
+
+// Create a simple floor with the grass texture
+const floorGeometry = new THREE.PlaneGeometry(200, 200);
+const floorMaterial = new THREE.MeshStandardMaterial({
+    map: grassTexture,
+    roughness: 0.8,
+    metalness: 0.2,
+    side: THREE.DoubleSide
+});
+
 const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-floor.position.set(0, 0, 1000)
+floor.position.set(0, 0, 950); 
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
+
 
 // Animation variables
 let model;
@@ -888,12 +907,26 @@ function zoomOutCamera(callback) {
 function updateBackground(altitude) {
     // Transition background from day to space
     const t = Math.min(altitude / 10, 1); // Normalize altitude to 0-1 range
-    const skyColor = new THREE.Color(0xa8def0).lerp(new THREE.Color(0x000033), t);
-    scene.background = skyColor;
-
+    
+    if (t < 0.5) {
+        // When below halfway to space, use the texture
+        if (backgroundTexture.image) {
+            scene.background = backgroundTexture;
+        } else {
+            scene.background = new THREE.Color(0xa8def0);
+        }
+    } else {
+        // When above halfway, blend to space color
+        const blendFactor = (t - 0.5) * 2;
+        const skyColor = new THREE.Color(0xa8def0).lerp(new THREE.Color(0x000033), blendFactor);
+        scene.background = skyColor;
+    }
+    
     // Show stars when in space
     if (altitude >= 10) {
         stars.visible = true;
+    } else {
+        stars.visible = false;
     }
 }
 
