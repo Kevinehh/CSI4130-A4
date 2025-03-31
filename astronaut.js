@@ -7,9 +7,18 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xa8def0);
 
+// global configuration
+const beltRadius = 600; // overall radius of the asteroid belt
+const asteroidCount = 500; // total number of asteroids
+const radiusVariation = 50; // variation in radial distance for asteroids
+const beltThickness = 50; // vertical spread of the belt
+
 // CAMERA
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(-1000, 0, 0);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+// camera.position.set(1500, 1000, 1500); // Position camera outside the system for a good overview
+// camera.lookAt(0, 0, 0); // Look at the center where the sun is
+camera.position.set(0, -beltRadius * 1.2, beltRadius * 0.8);
+camera.lookAt(0, 0, 0);
 
 // RENDERER
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('canvas.webgl') });
@@ -33,12 +42,6 @@ const cameraOffset = new THREE.Vector3(-10, 2, -15); // Fixed camera offset from
 let cameraFollowEnabled = true; // Flag to toggle between OrbitControls and auto-follow
 let currentTarget = null; // Variable to track which object is currently being followed
 let initialRocketPosition = null; // Store initial rocket position to calculate proper offsets
-
-// global configuration
-const beltRadius = 600; // overall radius of the asteroid belt
-const asteroidCount = 500; // total number of asteroids
-const radiusVariation = 50; // variation in radial distance for asteroids
-const beltThickness = 50; // vertical spread of the belt
 
 // initialize simplex noise 
 // const simplex = new SimplexNoise();
@@ -324,6 +327,52 @@ window.addEventListener('keydown', (event) => {
       }
     }
   }
+});
+
+// Add a key handler to give users a shortcut to view the solar system
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'v' || event.key === 'V') {
+        // Immediately transition to solar system view
+        cameraFollowEnabled = false;
+        
+        // Smooth transition to solar system view
+        let progress = 0;
+        const startPosition = camera.position.clone();
+        const startTarget = orbitControls.target.clone();
+        
+        function quickTransitionToSolarSystem() {
+            if (progress < 1) {
+                progress += 0.02; // Faster transition
+                
+                // Calculate new camera position for solar system overview
+                const newPosition = new THREE.Vector3().lerpVectors(
+                    startPosition,
+                    new THREE.Vector3(2000, 1500, 2000),
+                    progress
+                );
+                
+                // Keep focus on the center/sun
+                const newTarget = new THREE.Vector3().lerpVectors(
+                    startTarget,
+                    new THREE.Vector3(0, 0, 0),
+                    progress
+                );
+                
+                camera.position.copy(newPosition);
+                orbitControls.target.copy(newTarget);
+                
+                requestAnimationFrame(quickTransitionToSolarSystem);
+            } else {
+                // Set final position and orientation
+                camera.position.set(0, -beltRadius * 1.2, beltRadius * 0.8);
+                camera.lookAt(0, 0, 0);
+                orbitControls.update();
+                console.log("Switched to solar system view");
+            }
+        }
+        
+        quickTransitionToSolarSystem();
+    }
 });
 
 // LIGHTS
@@ -790,7 +839,7 @@ function startTakeoff() {
             if (!floating) {
                 floating = true;
                 startFloating();
-                zoomOutCamera(); // Call new function to zoom out
+                // zoomOutCamera(); // Call new function to zoom out
             }
         }
     }
@@ -849,8 +898,60 @@ function updateBackground(altitude) {
     }
 }
 
-// Zero Gravity Floating Effect
+// Modify the startFloating function to keep view on solar system
 function startFloating() {
+    // Instead of transitioning to the sun view, transition to solar system overview
+    setTimeout(() => {
+        // Disable camera following when transitioning to solar system view
+        cameraFollowEnabled = false;
+        
+        // Store original camera position and target for animation
+        const originalCameraPosition = camera.position.clone();
+        const originalTarget = orbitControls.target.clone();
+        
+        // Animate camera transition to solar system view
+        let progress = 0;
+        
+        function animateCameraToSolarSystem() {
+            if (progress < 1) {
+                progress += 0.01; // Control transition speed
+                
+                // Calculate interpolated position for a wide view
+                const newPosition = new THREE.Vector3().lerpVectors(
+                    originalCameraPosition,
+                    new THREE.Vector3(2000, 1500, 2000), // Position for seeing the whole system
+                    progress
+                );
+                
+                // Keep target on sun/center of solar system
+                const newTarget = new THREE.Vector3().lerpVectors(
+                    originalTarget,
+                    new THREE.Vector3(0, 0, 0), // Sun position
+                    progress
+                );
+                
+                // Update camera position and orientation
+                camera.position.copy(newPosition);
+                orbitControls.target.copy(newTarget);
+                camera.lookAt(newTarget);
+                
+                requestAnimationFrame(animateCameraToSolarSystem);
+            } else {
+                // Final position adjustment
+                camera.position.set(2000, 1500, 2000);
+                orbitControls.target.set(0, 0, 0);
+                camera.lookAt(0, 0, 0);
+                
+                // Enable controls for user to navigate
+                orbitControls.enabled = true;
+                
+                console.log("Camera transitioned to solar system overview");
+            }
+        }
+        
+        animateCameraToSolarSystem();
+    }, 3000); // 3 second delay before transitioning camera
+    
     function float() {
         if (!floating || !rocket) return;
 
