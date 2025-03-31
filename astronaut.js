@@ -8,7 +8,7 @@ scene.background = new THREE.Color(0xa8def0);
 
 // CAMERA
 const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(-10, 5, 25);
+camera.position.set(-10, 0, 15);
 
 // RENDERER
 const renderer = new THREE.WebGLRenderer({ canvas: document.querySelector('canvas.webgl') });
@@ -22,15 +22,52 @@ orbitControls.enableDamping = true;
 orbitControls.minDistance = 5;
 orbitControls.maxDistance = 15;
 orbitControls.enablePan = false;
-orbitControls.maxPolarAngle = Math.PI / 2 - 0.05;
+// Allow full rotation around the model
+orbitControls.maxPolarAngle = Math.PI; // Allow viewing from below
+orbitControls.minPolarAngle = 0; // Allow viewing from above
 orbitControls.update();
+
+// Camera follow settings
+const cameraOffset = new THREE.Vector3(-10, 2, 15); // Fixed camera offset from model
+let cameraFollowEnabled = true; // Flag to toggle between OrbitControls and auto-follow
+
+// Toggle camera follow mode
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'c' || event.key === 'C') {
+    cameraFollowEnabled = !cameraFollowEnabled;
+    console.log(`Camera follow mode: ${cameraFollowEnabled ? 'ENABLED' : 'DISABLED'}`);
+    
+    if (!cameraFollowEnabled && model) {
+      // When disabling follow, set orbit controls target to current model position
+      // and maintain current camera-to-model distance
+      orbitControls.target.copy(new THREE.Vector3(
+        model.position.x,
+        model.position.y + 1,
+        model.position.z
+      ));
+      
+      // Store the current distance from camera to model
+      const currentDistance = camera.position.distanceTo(orbitControls.target);
+      
+      // Update camera position to maintain the same distance but allow orbit
+      const direction = new THREE.Vector3().subVectors(
+        camera.position, 
+        orbitControls.target
+      ).normalize();
+      
+      camera.position.copy(orbitControls.target).add(
+        direction.multiplyScalar(currentDistance)
+      );
+    }
+  }
+});
 
 // LIGHTS
 const sunLight = new THREE.AmbientLight(0x404040, 100);
 scene.add(sunLight);
 
 // FLOOR
-const floorGeometry = new THREE.PlaneGeometry(20, 20);
+const floorGeometry = new THREE.PlaneGeometry(100, 100); // Expanded floor size
 const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, side: THREE.DoubleSide });
 const floor = new THREE.Mesh(floorGeometry, floorMaterial);
 floor.rotation.x = -Math.PI / 2;
@@ -51,7 +88,7 @@ loader.load(
     'connor/scene.gltf',
     function (gltf) {
         model = gltf.scene;
-        model.position.set(0, 1, 0);
+        model.position.set(0, 0, 0);
         model.castShadow = true;
         scene.add(model);
         
@@ -134,39 +171,53 @@ function animateWalk(time) {
     // Arm animations (opposite to legs)
     if (bones.leftArm && bones.rightArm) {
         const leftInitial = bones.leftArm.userData.initialRotation;
-        const rightInitial = bones.rightArm.userData.initialRotation;
-
-        if (bones.leftArm && bones.rightArm) {
-            // Move arms downward
-            bones.leftArm.rotation.x -= Math.PI / 4;  // Rotate 45° down
-            bones.rightArm.rotation.x -= Math.PI / 4;
-        
-            // Slight inward rotation to move them closer to the torso
-            bones.leftArm.rotation.z += 1;
-            bones.rightArm.rotation.z -= 1;
-        }        
+        const rightInitial = bones.rightArm.userData.initialRotation;      
     
         // Arms swing in opposition to legs (natural walking motion)
-        bones.leftArm.rotation.z = leftInitial.z + Math.sin(cycle + Math.PI) * 0.25; // Backward when right leg forward
+        bones.leftArm.rotation.z = -1 * (leftInitial.z + Math.sin(cycle + Math.PI) * 0.25); // Backward when right leg forward
         bones.rightArm.rotation.z = rightInitial.z + Math.sin(cycle) * 0.25; // Forward when left leg forward
     
         // Slight inward tilt to avoid arms going outward
-        bones.leftArm.rotation.x = leftInitial.x - 0.05;  
-        bones.rightArm.rotation.x = rightInitial.x - 0.05;
+        bones.leftArm.rotation.x = leftInitial.x + 0.5;  
+        bones.rightArm.rotation.x = rightInitial.x + 0.5;
     }
-    
     
     // Move the character forward
     model.position.z += 0.03; // Adjust speed as needed
+    
+    // Always update orbit controls target to keep model centered
+    if (model) {
+        // Smoothly update the orbit controls target to follow the model
+        const targetPosition = new THREE.Vector3(
+            model.position.x,
+            model.position.y + 1,
+            model.position.z
+        );
+        
+        orbitControls.target.lerp(targetPosition, 0.1);
+    }
 }
 
-let target = new THREE.Vector3();
-
-function updateCamera(){
-    const offset = new THREE.Vector3(0, 3, 8);
-    model.getWorldPosition(target)
-    camera.position.copy(target).add(offset)
-    camera.lookAt(target);
+// Improved camera follow function that maintains consistent distance and angle
+function followModel() {
+    if (!model || !cameraFollowEnabled) return;
+    
+    // Calculate ideal camera position based on fixed offset from model
+    const idealPosition = new THREE.Vector3(
+        model.position.x + cameraOffset.x,
+        model.position.y + cameraOffset.y,
+        model.position.z + cameraOffset.z
+    );
+    
+    // Update camera position
+    camera.position.copy(idealPosition);
+    
+    // Set the look target slightly above the model's base
+    camera.lookAt(
+        model.position.x,
+        model.position.y + 1,
+        model.position.z
+    );
 }
 
 // ANIMATION LOOP
@@ -176,24 +227,16 @@ function animate() {
     // Apply custom walk animation
     animateWalk(elapsedTime);
     
-    // if (model) {
-    //     // Define an offset behind the model
-    //     const offset = new THREE.Vector3(0, 3, 8); // (x, y, z)
-        
-    //     // Compute new camera position relative to the model
-    //     const modelWorldPosition = new THREE.Vector3();
-    //     model.getWorldPosition(modelWorldPosition);
-        
-    //     camera.position.copy(modelWorldPosition).add(offset);
-    //     camera.lookAt(modelWorldPosition);
-    // }
-    if(model){
-        updateCamera();
+    // Follow model with camera if enabled
+    if (model && cameraFollowEnabled) {
+        followModel();
     }
+    
+    // Always update orbit controls
     orbitControls.update();
+    
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
 }
-
 
 animate();
