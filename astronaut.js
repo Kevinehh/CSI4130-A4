@@ -540,7 +540,8 @@ function updateBackground(altitude) {
 
     // Show stars when in space
     if (altitude >= 10) {
-        stars.visible = true;
+      stars.visible = true;
+
     }
 }
 
@@ -548,6 +549,9 @@ function updateBackground(altitude) {
 function startFloating() {
     function float() {
         if (!floating || !rocket) return;
+
+        // Stop exhaust particles when reaching space
+        particles._points.visible = false;
 
         // Rotate the rocket to simulate zero-gravity floating
         rocket.rotation.y += 0.004;
