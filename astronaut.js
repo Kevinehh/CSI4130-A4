@@ -46,14 +46,15 @@ orbitControls.update();
 const cameraOffset = new THREE.Vector3(-10, 2, -15); // Fixed camera offset from model
 let cameraFollowEnabled = true; // Flag to toggle between OrbitControls and auto-follow
 let currentTarget = null; // Variable to track which object is currently being followed
-let initialRocketPosition = null; // Store initial rocket position to calculate proper offsets
 
 let rocketPhysics = {
-  velocity: new THREE.Vector3(0, 0, 0),
-  thrust: 0.4,
-  turnSpeed: 0.02,
-  drag: 0.97,
-  maxSpeed: 0.9
+    velocity: new THREE.Vector3(0, 0, 0),
+    angularVelocity: new THREE.Vector3(0, 0, 0),
+    thrust: 0.002,
+    turnSpeed: 0.0001,
+    drag: 0.997,
+    maxSpeed: 0.3,
+    angularDrag: 0.997
 };
 
 // Control states for keyboard input
@@ -397,9 +398,9 @@ window.addEventListener('keydown', (event) => {
 });
 
 // LIGHTS
-const ambientLight = new THREE.AmbientLight(0x404040, 3.0);
+const ambientLight = new THREE.AmbientLight(0x404040, 2);
 scene.add(ambientLight);
-const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
 directionalLight.position.set(100, 100, 200);
 scene.add(directionalLight);
 
@@ -486,8 +487,6 @@ function initializeScene(vertexShader, fragmentShader) {
 // applying a scale factor for each model.
 function loadSolarSystem() {
     const gltfLoader = new GLTFLoader();
-
-
     const solarBodies = [
         { name: "Sun", path: "./asteroids/resources/sun/scene.gltf", orbitRadius: 0, scale: 8.0 },
         { name: "Mercury", path: "./asteroids/resources/mercury/scene.gltf", orbitRadius: 150, scale: 10 },
@@ -1209,113 +1208,78 @@ function animate(timestamp) {
                 child.rotation.z += child.userData.orbitSpeed;
             }
         });
-    }
 
-    // ROCKET CONTROLS
-      if (rocket) {
-        // Get the current orientation vectors of the rocket
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(rocket.quaternion);
-        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rocket.quaternion);
-        const up = new THREE.Vector3(0, 1, 0).applyQuaternion(rocket.quaternion);
+    const thrusterOffset = new THREE.Vector3(0, 1, -2); // Adjust Y to match bottom of model
+
+    if (rocket) {
+        // ORIENTATION
+        if (keyState.w) rocketPhysics.angularVelocity.x -= rocketPhysics.turnSpeed;
+        if (keyState.s) rocketPhysics.angularVelocity.x += rocketPhysics.turnSpeed;
+        if (keyState.a) rocketPhysics.angularVelocity.y += rocketPhysics.turnSpeed;
+        if (keyState.d) rocketPhysics.angularVelocity.y -= rocketPhysics.turnSpeed;
         
-        // Scale for boost
-        const thrustMultiplier = keyState.shift ? 1.8 : 1.0;
+        // Apply rotation velocity
+        rocket.rotation.x += rocketPhysics.angularVelocity.x;
+        rocket.rotation.y += rocketPhysics.angularVelocity.y;
+        rocket.rotation.z += rocketPhysics.angularVelocity.z;
         
-        // Clear rotation.z to keep rocket level by default
-        rocket.rotation.z = 0;
+        // Apply angular drag
+        rocketPhysics.angularVelocity.multiplyScalar(rocketPhysics.angularDrag);
         
-        // DIRECTIONAL MOVEMENT
-        // Move in the direction that makes sense to the player
-        if (keyState.s) {
-          // Forward is relative to the current yaw, but always parallel to xz-plane
-          const forwardDir = new THREE.Vector3(
-            Math.sin(-rocket.rotation.y), 
-            0,
-            Math.cos(rocket.rotation.y)
-          ).normalize();
-          
-          rocketPhysics.velocity.add(
-            forwardDir.multiplyScalar(rocketPhysics.thrust * thrustMultiplier)
-          );
-          
-          // Add a slight tilt forward when moving forward
-          rocket.rotation.x = THREE.MathUtils.lerp(rocket.rotation.x, 0.1, 0.1);
-        } else if (keyState.w) {
-    
-          const backwardDir = new THREE.Vector3(
-            -Math.sin(-rocket.rotation.y), 
-            0,
-            -Math.cos(rocket.rotation.y)
-          ).normalize();
-          
-          rocketPhysics.velocity.add(
-            backwardDir.multiplyScalar(rocketPhysics.thrust * thrustMultiplier)
-          );
-          
-          // Add a slight tilt backward when moving backward
-          rocket.rotation.x = THREE.MathUtils.lerp(rocket.rotation.x, -0.1, 0.1);
-        } else {
-          // Level the pitch when not moving forward/backward
-          rocket.rotation.x = THREE.MathUtils.lerp(rocket.rotation.x, 0, 0.1);
-        }
-        
-        // LEFT/RIGHT TURNING (rotate around Y axis)
-        if (keyState.a) {
-          // Turn left
-          rocket.rotation.y += Math.min(rocketPhysics.turnSpeed * thrustMultiplier, 0.05);
-          
-          // Add a slight bank when turning, but keep it minimal
-          rocket.rotation.z = THREE.MathUtils.lerp(rocket.rotation.z, 0.1, 0.1);
-        } else if (keyState.d) {
-          // Turn right
-          rocket.rotation.y -= Math.min(rocketPhysics.turnSpeed * thrustMultiplier, 0.05);
-          
-          // Add a slight bank when turning, but keep it minimal
-          rocket.rotation.z = THREE.MathUtils.lerp(rocket.rotation.z, -0.1, 0.1);
-        } else {
-          // Return to level when not turning
-          rocket.rotation.z = THREE.MathUtils.lerp(rocket.rotation.z, 0, 0.1);
-        }
-        
-        // Prevent the rotation from going extreme
-        rocket.rotation.y = rocket.rotation.y % (Math.PI * 2);
-        
-        // UP/DOWN MOVEMENT (world Y-axis)
+        // propulsion
+        let thrusterActive = false;
+        const acceleration = new THREE.Vector3();
+
         if (keyState.q) {
-          // Move directly up in world space
-          rocketPhysics.velocity.y += rocketPhysics.thrust * thrustMultiplier;
+            thrusterActive = true;
+            const forwardDir = new THREE.Vector3(0, 1, 0);
+            let thrustMultiplier = 1;
+        
+            forwardDir.applyQuaternion(rocket.quaternion);
+            let thrustForce = forwardDir.multiplyScalar(rocketPhysics.thrust * thrustMultiplier);
+        
+            if (keyState.shift) {
+                thrustForce.multiplyScalar(100);
+            }
+        
+            acceleration.add(thrustForce);
         }
         
         if (keyState.e) {
-          // Move directly down in world space
-          rocketPhysics.velocity.y -= rocketPhysics.thrust * thrustMultiplier;
+            thrusterActive = true;
+            const backwardDir = new THREE.Vector3(0, -1, 0);
+            backwardDir.applyQuaternion(rocket.quaternion);
+            acceleration.add(backwardDir.multiplyScalar(rocketPhysics.thrust));
         }
-        
-        // Limit max speed
+
+        // Apply acceleration to velocity
+        rocketPhysics.velocity.add(acceleration);
+
+        // Limit speed naturally
         if (rocketPhysics.velocity.length() > rocketPhysics.maxSpeed) {
-          rocketPhysics.velocity.normalize().multiplyScalar(rocketPhysics.maxSpeed);
+            rocketPhysics.velocity.normalize().multiplyScalar(rocketPhysics.maxSpeed);
         }
-        
+
         // Apply velocity to position
         rocket.position.add(rocketPhysics.velocity);
-        
-        // Apply drag to slow down
-        rocketPhysics.velocity.multiplyScalar(rocketPhysics.drag);
-        
-        // Update background based on current height
-        updateBackground(rocket.position.y);
-        
-        // Update particle system based on thruster activity
-        const isThrusting = keyState.w || keyState.s || keyState.q || keyState.e;
-        if (isThrusting && particles && isTakingOff) {
-          particles._points.visible = true;
-        } else if (particles && !isTakingOff) {
-          particles._points.visible = false;
-        }
-        
-      }
-      // END
 
+        // Effects
+        updateBackground(rocket.position.y);
+
+        // PARTICLE EFFECTS - Properly Attach Thruster Fire
+        if (particles) {
+            // Convert local thruster position to world space
+            const thrusterWorldPos = thrusterOffset.clone();
+            rocket.localToWorld(thrusterWorldPos); // Get exact world position of thruster
+
+            particles._points.position.copy(thrusterWorldPos); // Set fire effect position
+            particles._points.quaternion.copy(rocket.quaternion); // Ensure it rotates with the rocket
+            particles._points.visible = thrusterActive;
+        }
+    }
+
+}
+  // END
 
     // update shooting stars
     shootingStars.forEach((star) => {
