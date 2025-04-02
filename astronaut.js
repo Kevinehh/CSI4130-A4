@@ -727,7 +727,6 @@ function setupShootingStars() {
 }
 
 // FLOOR
-// FLOOR
 // Create textures for grass
 const textureLoader = new THREE.TextureLoader();
 const grassTexture = textureLoader.load('resources/grass.jpg', function(texture) {
@@ -749,6 +748,7 @@ floor.position.set(0, 0, 950);
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
+
 
 // Animation variables
 let model;
