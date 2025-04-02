@@ -594,11 +594,11 @@ function updateBackground(altitude) {
 }
 
 // Modify the checkModelVisibility function to zoom out after model removal and before takeoff
-function checkModelVisibility(currentTime, model) {
+function checkModelVisibility(model) {
     if (!model || !modelVisible) return;
     
     // Check if enough time has passed
-    if ((currentTime - startTime) > disappearAfter) {
+    if (model.position == (0, 0, 30)) {
         // Store model's last position before disappearing
         lastModelPosition = model.position.clone();
         
@@ -750,7 +750,7 @@ function animate(timestamp) {
   const timeElapsed = (timestamp - previousRAF) * 0.001; // Convert to seconds
   
   // Check if model should disappear
-  checkModelVisibility(elapsedTime, model);
+  checkModelVisibility(model);
   
   // Apply custom walk animation
   animateWalk(elapsedTime);

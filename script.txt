@@ -1,0 +1,10 @@
+This is Group 13's video submission for our Space Travel Animation. In our scene we have an astronaut who approaches his rocket, takes off into outer space and flies around
+celestial bodies to get a closer look at our solar system. A camera follows our main target throughout the animation and the user can activate orbit controls to look around
+the solar system. The user can also use the movement keys in the top right legend to fly around the solar system
+
+The astronaut walking was animated using skeletal animation. After he gets into his rocket, the rocket takes off. After loading in a rigged model, various bones were accessed
+to imitate a walking animation 
+
+The stars in our solar system were also created using a particle system. For this we used threejs' points system, which is optimized for rendering a large number of small objects
+
+As the rocket gets into high altitude, the user is now in space and can fly closer away from the celestial bodies.

@@ -5,7 +5,11 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 
 // SCENE
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xa8def0);
+const backgroundTextureLoader = new THREE.TextureLoader();
+const backgroundTexture = backgroundTextureLoader.load('resources/sky.jpg', function(texture) {
+    // When texture loads, set it as the scene background
+    scene.background = texture;
+});
 
 let solarSystemVisible = false; // Track if solar system is visible
 let asteroidBeltVisible = false; // Track if asteroid belt is visible
@@ -46,10 +50,10 @@ let initialRocketPosition = null; // Store initial rocket position to calculate 
 
 let rocketPhysics = {
   velocity: new THREE.Vector3(0, 0, 0),
-  thrust: 0.007,
+  thrust: 0.4,
   turnSpeed: 0.02,
   drag: 0.97,
-  maxSpeed: 0.4
+  maxSpeed: 0.9
 };
 
 // Control states for keyboard input
@@ -723,10 +727,25 @@ function setupShootingStars() {
 }
 
 // FLOOR
-const floorGeometry = new THREE.PlaneGeometry(100, 100); // Expanded floor size
-const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, side: THREE.DoubleSide });
+// FLOOR
+// Create textures for grass
+const textureLoader = new THREE.TextureLoader();
+const grassTexture = textureLoader.load('resources/grass.jpg', function(texture) {
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(20, 20); // Repeat the texture 20 times
+});
+
+// Create a simple floor with the grass texture
+const floorGeometry = new THREE.PlaneGeometry(200, 200);
+const floorMaterial = new THREE.MeshStandardMaterial({
+    map: grassTexture,
+    roughness: 0.8,
+    metalness: 0.2,
+    side: THREE.DoubleSide
+});
+
 const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-floor.position.set(0, 0, 1000)
+floor.position.set(0, 0, 950); 
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
@@ -889,7 +908,7 @@ function startTakeoff() {
 
     let takeoffSpeed = 4; // Speed of ascent
     function animateTakeoff() {
-        if (rocket.position.y < 50) { // Move until Y=50
+        if (rocket.position.y < 200) { // Move until Y=50
             rocket.position.y += takeoffSpeed * 0.03;
 
             // Transition background as the rocket ascends
@@ -950,12 +969,27 @@ function zoomOutCamera(callback) {
 function updateBackground(altitude) {
     // Transition background from day to space
     const t = Math.min(altitude / 10, 1); // Normalize altitude to 0-1 range
-    const skyColor = new THREE.Color(0xa8def0).lerp(new THREE.Color(0x000033), t);
-    scene.background = skyColor;
-
+    
+    if (t < 0.5) {
+        // When below halfway to space, use the texture
+        if (backgroundTexture.image) {
+            scene.background = backgroundTexture;
+        } else {
+            scene.background = new THREE.Color(0xa8def0);
+        }
+    } else {
+        // When above halfway, blend to space color
+        let blendFactor = (t - 0.5) * 2;
+        let skyColor = new THREE.Color(0xa8def0).lerp(new THREE.Color(0x000033), blendFactor);
+        scene.background = skyColor;
+    }
+    
     // Show stars when in space
-    if (altitude >= 10) {
+    if (altitude >= 110) {
+        scene.background = new THREE.Color(0x000000);
         stars.visible = true;
+    } else {
+        stars.visible = false;
     }
 }
 
@@ -985,11 +1019,11 @@ function startFloating() {
 }
 
 // Modify the checkModelVisibility function to zoom out after model removal and before takeoff
-function checkModelVisibility(currentTime, model) {
+function checkModelVisibility(model) {
     if (!model || !modelVisible) return;
-
+    console.log(model.position);
     // Check if enough time has passed
-    if ((currentTime - startTime) > disappearAfter) {
+    if (model.position.z > 997) {
         // Store model's last position before disappearing
         lastModelPosition = model.position.clone();
 
@@ -1040,10 +1074,11 @@ function followTarget(target) {
     if (!target || !cameraFollowEnabled) return;
 
     let targetOffset = cameraOffset.clone();
+    // let targetOffset = new THREE.Vector3(0, 2, -15);
 
     // If following rocket, use the calculated offset that matches the model's camera relationship
     if (target === rocket && rocketOffset.length() > 0) {
-        targetOffset = rocketOffset;
+        targetOffset = new THREE.Vector3(-5, 1, 30);
     }
 
     // Calculate ideal camera position based on target's position and the appropriate offset
@@ -1143,7 +1178,7 @@ function animate(timestamp) {
     const timeElapsed = (timestamp - previousRAF) * 0.001; // Convert to seconds
 
     // Check if model should disappear
-    checkModelVisibility(elapsedTime, model);
+    checkModelVisibility(model);
 
     // Apply custom walk animation
     animateWalk(elapsedTime);
@@ -1191,7 +1226,7 @@ function animate(timestamp) {
         
         // DIRECTIONAL MOVEMENT
         // Move in the direction that makes sense to the player
-        if (keyState.w) {
+        if (keyState.s) {
           // Forward is relative to the current yaw, but always parallel to xz-plane
           const forwardDir = new THREE.Vector3(
             Math.sin(-rocket.rotation.y), 
@@ -1205,7 +1240,7 @@ function animate(timestamp) {
           
           // Add a slight tilt forward when moving forward
           rocket.rotation.x = THREE.MathUtils.lerp(rocket.rotation.x, 0.1, 0.1);
-        } else if (keyState.s) {
+        } else if (keyState.w) {
     
           const backwardDir = new THREE.Vector3(
             -Math.sin(-rocket.rotation.y), 
@@ -1280,7 +1315,7 @@ function animate(timestamp) {
         
       }
       // END
-      
+
 
     // update shooting stars
     shootingStars.forEach((star) => {
@@ -1331,8 +1366,7 @@ function addRocketControlsInfo() {
         <p>Q - Up</p>
         <p>E - Down</p>
         <p>Shift - Boost</p>
-        <p>C - Toggle camera follow</p>
-        <p>R - Manually activate rocket (for testing)</p>`;
+        <p>C - Toggle camera follow</p>`;
     document.body.appendChild(instructions);
     }
     
