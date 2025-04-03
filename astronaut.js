@@ -896,33 +896,48 @@ loader.load(
         console.log('An error happened');
     }
 );
-
-// This function would replace your existing startTakeoff function
 function startTakeoff() {
     if (!rocket) return;
-
     console.log("Starting rocket takeoff sequence");
+    
     isTakingOff = true;
-    particles._points.visible = true; // Show particles when takeoff starts
-
-    let takeoffSpeed = 4; // Speed of ascent
+    
+    const originalVelocity = rocketPhysics.velocity.clone();
+    rocketPhysics.velocity.y = 0.1;
+    
+    if (particles) {
+        particles._points.visible = true;
+        particles.Step(0.016);
+    }
+    
+    let takeoffSpeed = 2;
+    let maxHeight = 200;
+    let accelerationRate = 0.0005;
+    
     function animateTakeoff() {
-        if (rocket.position.y < 200) { // Move until Y=50
+        if (rocket.position.y < maxHeight) {
+            takeoffSpeed += accelerationRate;
+            
             rocket.position.y += takeoffSpeed * 0.03;
-
-            // Transition background as the rocket ascends
+            
+            keyState.q = true;
+            
+            setTimeout(() => {
+                keyState.q = false;
+            }, 10);
+            
             updateBackground(rocket.position.y);
-
             requestAnimationFrame(animateTakeoff);
         } else {
-            // When reaching max height, start floating and zoom out
+            keyState.q = false;
+            
             if (!floating) {
                 floating = true;
                 startFloating();
-                // zoomOutCamera(); // Call new function to zoom out
             }
         }
     }
+    
     animateTakeoff();
 }
 
@@ -996,7 +1011,7 @@ function updateBackground(altitude) {
         hasReachedSpace = true; // Lock background to space permanently
     } 
 }
-    
+
 // Modify the startFloating function to keep focus on rocket instead of switching to solar system
 function startFloating() {
 
@@ -1193,10 +1208,10 @@ function animate(timestamp) {
     }
 
     // Update particle system if rocket is taking off
+    // In your main animation loop
     if (isTakingOff) {
-        particles.Step(timeElapsed);
+        particles._points.visible = true;
     }
-
     // Ensure orbit controls update happens AFTER camera positioning
     if (!cameraFollowEnabled) {
         orbitControls.update();
