@@ -964,11 +964,17 @@ function zoomOutCamera(callback) {
     orbitControls.maxDistance = 40;
 }
 
-// Function to update background based on rocket altitude
+let hasReachedSpace = false; // Flag to track if space has been reached
+
 function updateBackground(altitude) {
-    // Transition background from day to space
+    // If we have reached space before, keep the final scene
+    if (hasReachedSpace) {
+        return;
+    }
+
     const t = Math.min(altitude / 10, 1); // Normalize altitude to 0-1 range
-    
+    const finalScene = new THREE.Color(0x000000);
+
     if (t < 0.5) {
         // When below halfway to space, use the texture
         if (backgroundTexture.image) {
@@ -982,16 +988,15 @@ function updateBackground(altitude) {
         let skyColor = new THREE.Color(0xa8def0).lerp(new THREE.Color(0x000033), blendFactor);
         scene.background = skyColor;
     }
-    
+
     // Show stars when in space
     if (altitude >= 110) {
-        scene.background = new THREE.Color(0x000000);
+        scene.background = finalScene;
         stars.visible = true;
-    } else {
-        stars.visible = false;
-    }
+        hasReachedSpace = true; // Lock background to space permanently
+    } 
 }
-
+    
 // Modify the startFloating function to keep focus on rocket instead of switching to solar system
 function startFloating() {
 
@@ -1020,7 +1025,7 @@ function startFloating() {
 // Modify the checkModelVisibility function to zoom out after model removal and before takeoff
 function checkModelVisibility(model) {
     if (!model || !modelVisible) return;
-    console.log(model.position);
+    //console.log(model.position);
     // Check if enough time has passed
     if (model.position.z > 997) {
         // Store model's last position before disappearing
